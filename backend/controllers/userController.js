@@ -1,44 +1,36 @@
-import bcrypt from "bcryptjs";
 import USER from "../models/userModel.js";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
 export const authUser = async (req, res) => {
-  const { type } = req.query;
+  const { userID, password, role, name } = req.body;
 
-  if (type == "register") {
-    const { userID, name, password, role } = req.body;
-
-    const userExists = await USER.findOne({ userID });
-    if (userExists) {
-      res.status(400);
-      throw new Error("User already exists");
+  try {
+    const user = await USER.findOne({ userID: userID });
+    if (user && bcrypt.compareSync(password, user.password)) {
+      const token = generateToken(user.userID, user.name, user.role);
+      res.status(200).json(user, token);
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await USER.create({
-      userID,
-      name,
-      password: hashedPassword,
-      role,
-    });
-
-    if (user) {
-      res.status(201).json({
-        _id: user._id,
-        userID: user.userID,
-        name: user.name,
-        role: user.role,
+    if (!user) {
+      const hassedPassword = bcrypt.hashSync(password, 10);
+      const newUser = await USER.create({
+        userID,
+        name,
+        password: hassedPassword,
+        role,
       });
+
+      const token = generateToken(newUser.userID, newUser.name, newUser.role);
+      res.status(200).json(newUser, token);
     }
-  } else if (type === "login") {
-    const { userID, password } = req.body;
-    const user = await USER.findOne({ userID });
-    if (user && (await bcrypt.compare(password, user.password))) {
-      res.json({
-        _id: user._id,
-        userID: user.userID,
-        name: user.name,
-        role: user.role,
-      });
-    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
+};
+
+const generateToken = (id, name, role) => {
+  return jwt.sign({ id, name, role }, process.env.JWT_SECRET, {
+    expiresIn: "1d",
+  });
 };
