@@ -99,12 +99,6 @@ const Login = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="p-6 space-y-5">
-            {errors.general && (
-              <div className="text-red-600 text-center text-sm">
-                {errors.general}
-              </div>
-            )}
-
             <div className="flex items-center justify-center gap-4 mb-6">
               <button
                 type="button"
@@ -195,6 +189,13 @@ const Login = () => {
                 <p className="mt-1 text-sm text-red-600">{errors.password}</p>
               )}
             </div>
+
+            {/* Error message displayed just above the submit button */}
+            {errors.general && (
+              <div className="text-red-600 text-center font-bold text-l -mt-4">
+                {errors.general}
+              </div>
+            )}
 
             <div>
               <button

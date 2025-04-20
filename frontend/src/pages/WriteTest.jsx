@@ -1,43 +1,69 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 const WriteTest = () => {
-  // This would normally come from backend/API
+  const [testCode, setTestCode] = useState("");
+  const [testLoaded, setTestLoaded] = useState(false);
   const [testDetails, setTestDetails] = useState({
-    testName: "Sample Science Test",
-    testDescription:
-      "This test covers basic concepts of physics and chemistry.",
-    totalMarks: 20,
-    timeLimit: 30, // minutes
+    testName: "",
+    testDescription: "",
+    totalMarks: 0,
+    timeLimit: 0,
   });
+  const [questions, setQuestions] = useState([]);
+  const [answers, setAnswers] = useState([]);
+  const [selectedOptions, setSelectedOptions] = useState([]);
+  const [timeLeft, setTimeLeft] = useState(0); // in seconds
+  const [timerActive, setTimerActive] = useState(false);
 
-  const [questions] = useState([
-    {
-      type: "mcq",
-      questionText: "What is the chemical symbol for Gold?",
-      marks: 2,
-      options: ["Go", "Gd", "Au", "Ag"],
-      correctOption: 2,
-    },
-    {
-      type: "short",
-      questionText:
-        "Name the force that keeps planets in orbit around the sun.",
-      marks: 3,
-      keywords: "gravity,gravitational",
-    },
-    {
-      type: "long",
-      questionText:
-        "Explain the difference between an element and a compound with examples.",
-      marks: 5,
-      keywords: "element,pure substance,compound,chemically combined,examples",
-    },
-  ]);
+  // Load test by code
+  const loadTestByCode = async () => {
+    if (!testCode.trim()) {
+      alert("Please enter a test code");
+      return;
+    }
 
-  const [answers, setAnswers] = useState(Array(questions.length).fill(""));
-  const [selectedOptions, setSelectedOptions] = useState(
-    Array(questions.length).fill(null)
-  );
+    try {
+      const response = await fetch(
+        `http://localhost:5000/dbms/test/${testCode}`
+      );
+      const data = await response.json();
+
+      if (response.ok) {
+        setTestDetails({
+          testName: data.name,
+          testDescription: data.description,
+          totalMarks: data.totalMarks,
+          timeLimit: data.timeLimit,
+        });
+        setQuestions(data.questions);
+        setAnswers(Array(data.questions.length).fill(""));
+        setSelectedOptions(Array(data.questions.length).fill(null));
+        setTimeLeft(data.timeLimit * 60); // Convert minutes to seconds
+        setTestLoaded(true);
+        setTimerActive(true);
+      } else {
+        throw new Error(data.message || "Test not found");
+      }
+    } catch (error) {
+      console.error("Error loading test:", error);
+      alert("Error loading test: " + error.message);
+    }
+  };
+
+  // Timer effect
+  useEffect(() => {
+    let interval;
+    if (timerActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft((prev) => prev - 1);
+      }, 1000);
+    } else if (timeLeft === 0 && timerActive) {
+      setTimerActive(false);
+      alert("Time's up! Your test will be automatically submitted.");
+      submitTest();
+    }
+    return () => clearInterval(interval);
+  }, [timeLeft, timerActive]);
 
   const handleAnswerChange = (index, value) => {
     const newAnswers = [...answers];
@@ -51,8 +77,10 @@ const WriteTest = () => {
     setSelectedOptions(newSelectedOptions);
   };
 
-  const submitTest = () => {
-    // Calculate score (this would be more sophisticated in a real app)
+  const submitTest = async () => {
+    setTimerActive(false); // Stop the timer
+
+    // Calculate score
     let score = 0;
     questions.forEach((question, index) => {
       if (question.type === "mcq") {
@@ -73,6 +101,30 @@ const WriteTest = () => {
       }
     });
 
+    // Save test attempt to database
+    try {
+      const response = await fetch("/api/test-attempts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          testCode,
+          answers,
+          selectedOptions,
+          score,
+          totalMarks: testDetails.totalMarks,
+          timeSpent: testDetails.timeLimit * 60 - timeLeft, // in seconds
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save test attempt");
+      }
+    } catch (error) {
+      console.error("Error saving test attempt:", error);
+    }
+
     alert(
       `Test submitted! Your score: ${score.toFixed(1)}/${
         testDetails.totalMarks
@@ -80,16 +132,58 @@ const WriteTest = () => {
     );
   };
 
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+  };
+
+  if (!testLoaded) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+        <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg p-6 mt-20">
+          <h1 className="text-2xl font-bold text-indigo-800 mb-6">
+            Enter Test Code
+          </h1>
+          <div className="flex">
+            <input
+              type="text"
+              value={testCode}
+              onChange={(e) => setTestCode(e.target.value)}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="Enter test code"
+            />
+            <button
+              onClick={loadTestByCode}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-r-lg hover:bg-indigo-700"
+            >
+              Load Test
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-4xl mx-auto">
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6 transform transition-all hover:shadow-xl">
-          <h1 className="text-3xl font-bold text-indigo-800 mb-2">
-            {testDetails.testName}
-          </h1>
-          <p className="text-gray-600 mb-4">{testDetails.testDescription}</p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-indigo-800 mb-2">
+                {testDetails.testName}
+              </h1>
+              <p className="text-gray-600 mb-4">
+                {testDetails.testDescription}
+              </p>
+            </div>
+            <div className="bg-red-100 text-red-800 px-4 py-2 rounded-lg font-medium">
+              Time Remaining: {formatTime(timeLeft)}
+            </div>
+          </div>
 
-          <div className="flex justify-between items-center bg-indigo-50 p-3 rounded-lg">
+          <div className="flex justify-between items-center bg-indigo-50 p-3 rounded-lg mt-4">
             <div>
               <span className="font-medium">Total Marks: </span>
               <span className="text-indigo-700">{testDetails.totalMarks}</span>
