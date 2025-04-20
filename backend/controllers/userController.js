@@ -3,34 +3,25 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 export const authUser = async (req, res) => {
-  const { userID, password, role, name } = req.body;
+  const { userID, password, role } = req.body;
 
   try {
-    const user = await USER.findOne({ userID: userID });
-    if (user && bcrypt.compareSync(password, user.password)) {
-      const token = generateToken(user.userID, user.name, user.role);
-      res.status(200).json(user, token);
+    const user = await USER.findOne({ userID, role });
+
+    const isMatch = bcrypt.compareSync(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Incorrect password" });
     }
 
-    if (!user) {
-      const hassedPassword = bcrypt.hashSync(password, 10);
-      const newUser = await USER.create({
-        userID,
-        name,
-        password: hassedPassword,
-        role,
-      });
-
-      const token = generateToken(newUser.userID, newUser.name, newUser.role);
-      res.status(200).json(newUser, token);
-    }
+    const token = generateToken(user.userID, user.role);
+    res.status(200).json({ token });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Server error. Please try again later." });
   }
 };
 
-const generateToken = (id, name, role) => {
-  return jwt.sign({ id, name, role }, process.env.JWT_SECRET, {
+const generateToken = (id, role) => {
+  return jwt.sign({ id, role }, process.env.JWT_SECRET, {
     expiresIn: "1d",
   });
 };

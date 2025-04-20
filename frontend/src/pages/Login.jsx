@@ -1,15 +1,16 @@
-import { useState, useEffect, use } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const Login = () => {
   const [userType, setUserType] = useState("student");
   const [credentials, setCredentials] = useState({
     userId: "",
-    name: "",
     password: "",
   });
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const navigate = useNavigate();
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -28,7 +29,6 @@ const Login = () => {
   const validateForm = () => {
     const newErrors = {};
     if (!credentials.userId.trim()) newErrors.userId = "User ID is required";
-    if (!credentials.name.trim() && !user) newErrors.name = "Name is required";
     if (!credentials.password) newErrors.password = "Password is required";
     else if (credentials.password.length < 6)
       newErrors.password = "Password must be at least 6 characters";
@@ -52,15 +52,22 @@ const Login = () => {
         body: JSON.stringify({
           userID: credentials.userId,
           password: credentials.password,
-          name: credentials.name,
           role: userType,
         }),
       });
 
       const data = await response.json();
-      console.log(data);
+      if (!response.ok) {
+        setErrors({ general: data.message || "Authentication failed" });
+      } else {
+        localStorage.setItem("token", data.token);
+        userType === "student"
+          ? navigate("/writetest")
+          : navigate("/createtest");
+      }
     } catch (error) {
       console.error("Error:", error);
+      setErrors({ general: "Something went wrong" });
     } finally {
       setIsLoading(false);
     }
@@ -132,6 +139,7 @@ const Login = () => {
                 Teacher
               </button>
             </div>
+
             <div>
               <label
                 htmlFor="userId"
@@ -148,10 +156,6 @@ const Login = () => {
                 className={`w-full px-4 py-2 rounded-lg border ${
                   errors.userId ? "border-red-500" : "border-gray-300"
                 } focus:ring-2 focus:outline-none transition-all`}
-                style={{
-                  borderColor: errors.userId ? "#EF4444" : "#D1D5DB",
-                  outlineColor: errors.userId ? "#EF4444" : "#3B82F6",
-                }}
                 placeholder={`Enter ${userType} ID`}
                 pattern="[a-z]{3}[0-9]{2}[a-z]{2}[0-9]{3}"
                 title="Format: 3 lowercase letters, 2 digits, 2 lowercase letters, 3 digits (e.g., nnm23cs283)"
@@ -163,53 +167,30 @@ const Login = () => {
 
             <div>
               <label
-                htmlFor="name"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Full Name
-              </label>
-              <input
-                type="text"
-                id="name"
-                name="name"
-                value={credentials.name}
-                onChange={handleInputChange}
-                className={`w-full px-4 py-2 rounded-lg border ${
-                  errors.name ? "border-red-500" : "border-gray-300"
-                } focus:ring-2 focus:outline-none transition-all`}
-                style={{
-                  borderColor: errors.name ? "#EF4444" : "#D1D5DB",
-                  outlineColor: errors.name ? "#EF4444" : "#3B82F6",
-                }}
-                placeholder="Enter your full name"
-              />
-              {errors.name && (
-                <p className="mt-1 text-sm text-red-600">{errors.name}</p>
-              )}
-            </div>
-
-            <div>
-              <label
                 htmlFor="password"
                 className="block text-sm font-medium text-gray-700 mb-1"
               >
                 Password
               </label>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                value={credentials.password}
-                onChange={handleInputChange}
-                className={`w-full px-4 py-2 rounded-lg border ${
-                  errors.password ? "border-red-500" : "border-gray-300"
-                } focus:ring-2 focus:outline-none transition-all`}
-                style={{
-                  borderColor: errors.password ? "#EF4444" : "#D1D5DB",
-                  outlineColor: errors.password ? "#EF4444" : "#3B82F6",
-                }}
-                placeholder="Enter your password"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  id="password"
+                  name="password"
+                  value={credentials.password}
+                  onChange={handleInputChange}
+                  className={`w-full px-4 py-2 rounded-lg border ${
+                    errors.password ? "border-red-500" : "border-gray-300"
+                  } focus:ring-2 focus:outline-none transition-all`}
+                  placeholder="Enter your password"
+                />
+                <span
+                  className="absolute top-2 right-3 text-sm text-blue-600 cursor-pointer select-none"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </span>
+              </div>
               {errors.password && (
                 <p className="mt-1 text-sm text-red-600">{errors.password}</p>
               )}
@@ -252,7 +233,7 @@ const Login = () => {
                     Signing in...
                   </>
                 ) : (
-                  "Sign in "
+                  "Sign in"
                 )}
               </button>
             </div>
