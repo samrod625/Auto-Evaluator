@@ -61,9 +61,7 @@ const Login = () => {
         setErrors({ general: data.message || "Authentication failed" });
       } else {
         localStorage.setItem("token", data.token);
-        userType === "student"
-          ? navigate("/writetest")
-          : navigate("/createtest");
+        navigate("/dashboard");
       }
     } catch (error) {
       console.error("Error:", error);
@@ -190,7 +188,6 @@ const Login = () => {
               )}
             </div>
 
-            {/* Error message displayed just above the submit button */}
             {errors.general && (
               <div className="text-red-600 text-center font-bold text-l -mt-4">
                 {errors.general}
@@ -231,10 +228,12 @@ const Login = () => {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    Signing in...
+                    {userType === "teacher" ? "Signing in..." : "Signing in..."}
                   </>
+                ) : userType === "teacher" ? (
+                  "Sign in as Teacher"
                 ) : (
-                  "Sign in"
+                  "Sign in as Student"
                 )}
               </button>
             </div>

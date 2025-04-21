@@ -6,16 +6,36 @@ export const authUser = async (req, res) => {
   const { userID, password, role } = req.body;
 
   try {
+    // Check if user exists
     const user = await USER.findOne({ userID, role });
 
-    const isMatch = bcrypt.compareSync(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Incorrect password" });
-    }
+    if (user) {
+      // User exists - verify password
+      const isMatch = bcrypt.compareSync(password, user.password);
+      if (!isMatch) {
+        return res.status(401).json({ message: "Incorrect password" });
+      }
 
-    const token = generateToken(user.userID, user.role);
-    res.status(200).json({ token });
+      // Password matches - generate token
+      const token = generateToken(user.userID, user.role);
+      return res.status(200).json({ token });
+    } else {
+      // User doesn't exist - create new user
+      const hashedPassword = bcrypt.hashSync(password, 10);
+      const newUser = new USER({
+        userID,
+        password: hashedPassword,
+        role,
+      });
+
+      await newUser.save();
+
+      // Generate token for new user
+      const token = generateToken(newUser.userID, newUser.role);
+      return res.status(201).json({ token });
+    }
   } catch (error) {
+    console.error("Error:", error);
     res.status(500).json({ message: "Server error. Please try again later." });
   }
 };

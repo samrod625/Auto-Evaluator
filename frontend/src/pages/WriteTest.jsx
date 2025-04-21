@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 const WriteTest = () => {
   const [testCode, setTestCode] = useState("");
@@ -12,10 +13,21 @@ const WriteTest = () => {
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState([]);
   const [selectedOptions, setSelectedOptions] = useState([]);
-  const [timeLeft, setTimeLeft] = useState(0); // in seconds
+  const [timeLeft, setTimeLeft] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [submissionResult, setSubmissionResult] = useState(null);
+  const navigate = useNavigate();
 
-  // Load test by code
+  const getAuthToken = () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      throw new Error("You need to be logged in to access this test");
+    }
+    return token;
+  };
+
   const loadTestByCode = async () => {
     if (!testCode.trim()) {
       alert("Please enter a test code");
@@ -23,34 +35,49 @@ const WriteTest = () => {
     }
 
     try {
-      const response = await fetch(
-        `http://localhost:5000/dbms/test/${testCode}`
-      );
-      const data = await response.json();
+      setLoading(true);
+      const token = getAuthToken();
 
-      if (response.ok) {
-        setTestDetails({
-          testName: data.name,
-          testDescription: data.description,
-          totalMarks: data.totalMarks,
-          timeLimit: data.timeLimit,
-        });
-        setQuestions(data.questions);
-        setAnswers(Array(data.questions.length).fill(""));
-        setSelectedOptions(Array(data.questions.length).fill(null));
-        setTimeLeft(data.timeLimit * 60); // Convert minutes to seconds
-        setTestLoaded(true);
-        setTimerActive(true);
-      } else {
-        throw new Error(data.message || "Test not found");
+      const response = await fetch(
+        `http://localhost:5000/dbms/test/${testCode}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to load test");
       }
+
+      const data = await response.json();
+      setTestDetails({
+        testName: data.name,
+        testDescription: data.description,
+        totalMarks: data.totalMarks,
+        timeLimit: data.timeLimit,
+      });
+      setQuestions(data.questions);
+      setAnswers(Array(data.questions.length).fill(""));
+      setSelectedOptions(Array(data.questions.length).fill(null));
+      setTimeLeft(data.timeLimit * 60);
+      setTestLoaded(true);
+      setTimerActive(true);
+      setSubmissionResult(null); // Reset any previous submission results
     } catch (error) {
       console.error("Error loading test:", error);
       alert("Error loading test: " + error.message);
+      if (error.message.includes("logged in")) {
+        window.location.href = "/login";
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Timer effect
   useEffect(() => {
     let interval;
     if (timerActive && timeLeft > 0) {
@@ -78,9 +105,12 @@ const WriteTest = () => {
   };
 
   const submitTest = async () => {
-    setTimerActive(false); // Stop the timer
+    if (isSubmitting) return;
 
-    // Calculate score
+    setTimerActive(false);
+    setIsSubmitting(true);
+
+    // Calculate score (frontend only)
     let score = 0;
     questions.forEach((question, index) => {
       if (question.type === "mcq") {
@@ -88,48 +118,52 @@ const WriteTest = () => {
           score += question.marks;
         }
       } else {
-        // Simple keyword matching for demo purposes
-        const keywords = question.keywords.toLowerCase().split(",");
-        const answerWords = answers[index].toLowerCase().split(/\s+/);
+        const keywords = question.keywords?.toLowerCase().split(",") || [];
+        const answerWords = answers[index]?.toLowerCase().split(/\s+/) || [];
         const matchedKeywords = keywords.filter((keyword) =>
           answerWords.some((word) => word.includes(keyword))
         );
-        // Award partial marks based on keyword matches
-        if (matchedKeywords.length > 0) {
+        if (matchedKeywords.length > 0 && keywords.length > 0) {
           score += (matchedKeywords.length / keywords.length) * question.marks;
         }
       }
     });
 
-    // Save test attempt to database
     try {
-      const response = await fetch("/api/test-attempts", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          testCode,
-          answers,
-          selectedOptions,
-          score,
-          totalMarks: testDetails.totalMarks,
-          timeSpent: testDetails.timeLimit * 60 - timeLeft, // in seconds
-        }),
-      });
+      const token = getAuthToken();
+      const response = await fetch(
+        `http://localhost:5000/dbms/test/${testCode}/attempt`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            testCode,
+            answers,
+            selectedOptions,
+            score,
+          }),
+        }
+      );
 
       if (!response.ok) {
-        throw new Error("Failed to save test attempt");
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to submit test");
       }
-    } catch (error) {
-      console.error("Error saving test attempt:", error);
-    }
 
-    alert(
-      `Test submitted! Your score: ${score.toFixed(1)}/${
-        testDetails.totalMarks
-      }`
-    );
+      await response.json();
+      setSubmissionResult({
+        score,
+        totalMarks: testDetails.totalMarks,
+      });
+    } catch (error) {
+      console.error("Submission error:", error);
+      alert("Error submitting test: " + error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const formatTime = (seconds) => {
@@ -155,9 +189,40 @@ const WriteTest = () => {
             />
             <button
               onClick={loadTestByCode}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-r-lg hover:bg-indigo-700"
+              disabled={loading}
+              className={`px-4 py-2 text-white rounded-r-lg ${
+                loading
+                  ? "bg-indigo-400 cursor-not-allowed"
+                  : "bg-indigo-600 hover:bg-indigo-700"
+              }`}
             >
-              Load Test
+              {loading ? "Loading..." : "Load Test"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (submissionResult) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+        <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg p-6 mt-20">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-indigo-800 mb-4">
+              Test Submitted Successfully!
+            </h1>
+            <div className="mb-6">
+              <p className="text-lg font-medium text-gray-700">
+                Your Score: {submissionResult.score.toFixed(1)}/
+                {submissionResult.totalMarks}
+              </p>
+            </div>
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
+            >
+              Go to Dashboard
             </button>
           </div>
         </div>
@@ -262,9 +327,14 @@ const WriteTest = () => {
           <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end">
             <button
               onClick={submitTest}
-              className="px-8 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-all transform hover:scale-105"
+              disabled={isSubmitting}
+              className={`px-8 py-3 text-white rounded-lg font-medium transition-all ${
+                isSubmitting
+                  ? "bg-indigo-400 cursor-not-allowed"
+                  : "bg-indigo-600 hover:bg-indigo-700 hover:scale-105"
+              }`}
             >
-              Submit Test
+              {isSubmitting ? "Submitting..." : "Submit Test"}
             </button>
           </div>
         </div>
